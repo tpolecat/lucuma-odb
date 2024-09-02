@@ -20,16 +20,17 @@ val lucumaItcVersion           = "0.22.1"
 val lucumaCoreVersion          = "0.104.0"
 val lucumaGraphQLRoutesVersion = "0.8.13"
 val lucumaSsoVersion           = "0.6.23"
-val munitVersion               = "0.7.29" // check test output if you attempt to update this
+val munitVersion               = "1.0.1" // check test output if you attempt to update this
+val munitScalacheckVersion     = "1.0.0" // check test output if you attempt to update this
 val munitCatsEffectVersion     = "1.0.7"  // check test output if you attempt to update this
-val munitDisciplineVersion     = "1.0.9"  // check test output if you attempt to update this
+val munitDisciplineVersion     = "2.0.0"  // check test output if you attempt to update this
 val natchezHttp4sVersion       = "0.6.0"
 val natchezVersion             = "0.3.6"
 val paigesVersion              = "0.4.4"
 val postgresVersion            = "42.7.4"
 val pprintVersion              = "0.9.0"
 val skunkVersion               = "0.6.4"
-val testcontainersScalaVersion = "0.40.14" // check test output if you attempt to update this
+val testcontainersScalaVersion = "0.41.4" // check test output if you attempt to update this
 
 ThisBuild / tlBaseVersion      := "0.12"
 ThisBuild / scalaVersion       := "3.5.0"
@@ -63,7 +64,7 @@ lazy val schema =
         "edu.gemini"     %%% "lucuma-core-testkit"             % lucumaCoreVersion          % Test,
         "edu.gemini"     %%% "lucuma-sso-frontend-client"      % lucumaSsoVersion,
         "org.scalameta"  %%% "munit"                           % munitVersion               % Test,
-        "org.scalameta"  %%% "munit-scalacheck"                % munitVersion               % Test,
+        "org.scalameta"  %%% "munit-scalacheck"                % munitScalacheckVersion     % Test,
         "org.typelevel"  %%% "discipline-munit"                % munitDisciplineVersion     % Test,
       )
     )
@@ -78,7 +79,7 @@ lazy val sequence = project
       "edu.gemini"     %% "lucuma-itc-client"               % lucumaItcVersion,
       "edu.gemini"     %% "lucuma-itc-testkit"              % lucumaItcVersion          % Test,
       "org.scalameta"  %% "munit"                           % munitVersion              % Test,
-      "org.scalameta"  %% "munit-scalacheck"                % munitVersion              % Test,
+      "org.scalameta"  %% "munit-scalacheck"                % munitScalacheckVersion    % Test,
       "org.typelevel"  %% "discipline-munit"                % munitDisciplineVersion    % Test,
     )
   )
@@ -95,7 +96,7 @@ lazy val smartgcal = project
       "edu.gemini"     %% "lucuma-core"                     % lucumaCoreVersion,
       "edu.gemini"     %% "lucuma-core-testkit"             % lucumaCoreVersion          % Test,
       "org.scalameta"  %% "munit"                           % munitVersion               % Test,
-      "org.scalameta"  %% "munit-scalacheck"                % munitVersion               % Test,
+      "org.scalameta"  %% "munit-scalacheck"                % munitScalacheckVersion     % Test,
       "org.typelevel"  %% "discipline-munit"                % munitDisciplineVersion     % Test,
     )
   )
@@ -138,7 +139,7 @@ lazy val service = project
       "com.amazonaws"  %  "aws-java-sdk-core"                  % "1.12.770"                 % Test,
       "edu.gemini"     %% "clue-http4s"                        % clueVersion                % Test,
       "org.scalameta"  %% "munit"                              % munitVersion               % Test,
-      "org.scalameta"  %% "munit-scalacheck"                   % munitVersion               % Test,
+      "org.scalameta"  %% "munit-scalacheck"                   % munitScalacheckVersion     % Test,
       "org.typelevel"  %% "discipline-munit"                   % munitDisciplineVersion     % Test,
       "edu.gemini"     %% "lucuma-core-testkit"                % lucumaCoreVersion          % Test,
       "org.typelevel"  %% "cats-time"                          % catsTimeVersion,
@@ -173,7 +174,7 @@ lazy val phase0 = project
       "edu.gemini"     %% "lucuma-core"                     % lucumaCoreVersion,
       "edu.gemini"     %% "lucuma-core-testkit"             % lucumaCoreVersion          % Test,
       "org.scalameta"  %% "munit"                           % munitVersion               % Test,
-      "org.scalameta"  %% "munit-scalacheck"                % munitVersion               % Test,
+      "org.scalameta"  %% "munit-scalacheck"                % munitScalacheckVersion     % Test,
       "org.typelevel"  %% "discipline-munit"                % munitDisciplineVersion     % Test,
     )
   )

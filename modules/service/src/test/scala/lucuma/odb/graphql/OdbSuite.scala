@@ -60,7 +60,7 @@ import lucuma.odb.service.AttachmentFileService.AttachmentException
 import lucuma.odb.service.S3FileService
 import lucuma.refined.*
 import munit.CatsEffectSuite
-import munit.internal.console.AnsiColors
+import munit.diff.console.AnsiColors
 import natchez.Trace.Implicits.noop
 import org.http4s.blaze.server.BlazeServerBuilder
 import org.http4s.client.Client
