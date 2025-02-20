@@ -608,33 +608,27 @@ trait MutationMapping[F[_]] extends AccessControl[F] {
     MutationField("updateAsterisms", UpdateAsterismsInput.binding(Path.from(ObservationType))) { (input, child) =>
 
       def selectObservations(using Services[F], NoTransaction[F]): F[Result[(AccessControl.ApprovedUpdate[EditAsterismsPatchInput, Observation.Id], Query)]] =
-        selectForUpdate(input).map { r =>
+        selectForUpdate(input, false /* exclude cals */).map { r =>
           r.flatMap { update =>
             observationResultSubquery(update.ids, input.LIMIT, child)
               .tupleLeft(update)
           }
         }
 
-      def setAsterisms(oids: List[Observation.Id])(using Services[F], Transaction[F]): F[Result[Unit]] =
-        NonEmptyList.fromList(oids).traverse { os =>
-          val add = input.SET.ADD.flatMap(NonEmptyList.fromList)
-          val del = input.SET.DELETE.flatMap(NonEmptyList.fromList)
-          asterismService.updateAsterism(os, add, del)
-        }.map(_.getOrElse(Result.unit))
-
       services
         .useNonTransactionally(selectObservations)
         .flatMap: rTup =>
-          val oids = rTup.toList.flatMap(_._1.ids)
-          services
-            .useTransactionally:
-              setAsterisms(oids)
-                .flatMap: rUnit =>
-                  val query  = (rTup, rUnit).parMapN { case ((_, query), _) => query }
-                  transaction
-                    .rollback
-                    .unlessA(query.hasValue)
-                    .as(query)
+          rTup.flatTraverse:
+            case (approved, query) =>
+              services
+                .useTransactionally:
+                  asterismService.updateAsterism(approved)
+                    .flatMap: rUnit =>
+                      val query  = (rTup, rUnit).parMapN { case ((_, query), _) => query }
+                      transaction
+                        .rollback
+                        .unlessA(query.hasValue)
+                        .as(query)
 
     }
 
@@ -753,7 +747,7 @@ trait MutationMapping[F[_]] extends AccessControl[F] {
 
       // Put it all together
       services
-        .useNonTransactionally(selectForUpdate(input)) // this performs all the access control checks
+        .useNonTransactionally(selectForUpdate(input, false /* ignore calibrations */)) // this performs all the access control checks
         .flatMap: oids =>
           services.useTransactionally:
             oids.flatTraverse: oids =>
@@ -769,24 +763,17 @@ trait MutationMapping[F[_]] extends AccessControl[F] {
     }
 
   private lazy val UpdateObservationsTimes: MutationField =
-    MutationField("updateObservationsTimes", UpdateObservationsTimesInput.binding(Path.from(ObservationType))) { (input, child) =>
-      services.useTransactionally {
-
-        val updateObservations: F[Result[(Map[Program.Id, List[Observation.Id]], Query)]] =
-          selectForUpdate(input).flatTraverse { which =>
-            observationService
-              .updateObservationsTimes(input.SET, which)
-              .map { r =>
-                r.flatMap { m =>
-                  val oids = m.values.foldLeft(List.empty[Observation.Id])(_ ++ _)
-                  observationResultSubquery(oids, input.LIMIT, child).tupleLeft(m)
-                }
-              }
-          }
-
-        updateObservations.map(_.map(_._2))
-      }
-    }
+    MutationField("updateObservationsTimes", UpdateObservationsTimesInput.binding(Path.from(ObservationType))): (input, child) =>
+      services
+        .useNonTransactionally(selectForUpdate(input, true)) // include cals
+        .flatMap: result =>
+          result.flatTraverse: approved =>
+            services.useTransactionally:
+              observationService
+                .updateObservationsTimes(approved)
+                .map: r =>
+                  r.flatMap: m =>
+                    observationResultSubquery(m.values.flatten.toList, input.LIMIT, child)
 
   private lazy val UpdateProgramUsers =
     MutationField("updateProgramUsers", UpdateProgramUsersInput.binding(Path.from(ProgramUserType))): (input, child) =>

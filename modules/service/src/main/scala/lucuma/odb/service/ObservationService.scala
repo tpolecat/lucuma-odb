@@ -111,8 +111,7 @@ sealed trait ObservationService[F[_]] {
   )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]]
 
   def updateObservationsTimes(
-    SET:   ObservationTimesInput,
-    which: AppliedFragment
+    update: AccessControl.ApprovedUpdate[ObservationTimesInput, Observation.Id]
   )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]]
 
   def cloneObservation(
@@ -490,21 +489,23 @@ object ObservationService {
           updateObservations(update.SET, sql"${observation_id.list(oids2)}"(oids2))
 
       override def updateObservationsTimes(
-        SET:   ObservationTimesInput,
-        which: AppliedFragment
+        update: AccessControl.ApprovedUpdate[ObservationTimesInput, Observation.Id]
       )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]] =
-        Trace[F].span("updateObservationTimes") {
-          val updates: ResultT[F, Map[Program.Id, List[Observation.Id]]] =
-            for {
-              r <- ResultT(Statements.updateObsTime(SET, which).traverse { af =>
-                      session.prepareR(af.fragment.query(program_id *: observation_id)).use { pq =>
-                        pq.stream(af.argument, chunkSize = 1024).compile.toList
-                      }
-                   })
-              g  = r.groupMap(_._1)(_._2)                 // grouped:   Map[Program.Id, List[Observation.Id]]
-            } yield g
-          updates.value
-        }
+        Trace[F].span("updateObservationTimes"):
+          NonEmptyList.fromList(update.ids) match
+            case None => Result(Map.empty).pure[F]
+            case Some(nel) =>              
+              val enc = observation_id.nel(nel)
+              val which = sql"$enc".apply(nel)
+              Statements.updateObsTime(update.SET, which).traverse: af =>
+                session
+                  .prepareR(af.fragment.query(program_id *: observation_id))
+                  .use: pq =>
+                    pq.stream(af.argument, chunkSize = 1024)
+                      .compile
+                      .toList
+                  .map: list =>
+                    list.groupMap(_._1)(_._2)
 
       private def cloneObservationImpl(
         observationId: Observation.Id,

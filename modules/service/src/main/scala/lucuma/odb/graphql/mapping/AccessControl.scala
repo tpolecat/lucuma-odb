@@ -27,12 +27,10 @@ import lucuma.odb.service.Services
 import lucuma.odb.service.Services.Syntax.*
 import lucuma.odb.syntax.observationWorkflowState.*
 import skunk.AppliedFragment
+import lucuma.odb.graphql.input.ObservationTimesInput
 
-object AccessControl {
-
+object AccessControl:
   sealed abstract case class ApprovedUpdate[A,B](SET: A, ids: List[B])
-
-}
 
 trait AccessControl[F[_]] extends Predicates[F] {
 
@@ -41,33 +39,33 @@ trait AccessControl[F[_]] extends Predicates[F] {
   def itcClient: ItcClient[F]
   def commitHash: CommitHash
 
-  private def observationIdSelect(
-    includeDeleted:      Option[Boolean],
-    WHERE:               Option[Predicate],
-    includeCalibrations: Boolean
-  ): Result[AppliedFragment] = {
-    val whereObservation: Predicate =
-      and(List(
-        Predicates.observation.program.isWritableBy(user),
-        Predicates.observation.existence.includeDeleted(includeDeleted.getOrElse(false)),
-        if (includeCalibrations) True else Predicates.observation.calibrationRole.isNull(true),
-        WHERE.getOrElse(True)
-      ))
-
-    MappedQuery(
-      Filter(whereObservation, Select("id", None, Query.Empty)),
-      Context(QueryType, List("observations"), List("observations"), List(ObservationType))
-    ).flatMap(_.fragment)
-  }
-
-  private def observationIdSelectWithWorkflowState(
+  private def selectForObservationUpdateImpl(
     includeDeleted:      Option[Boolean],
     WHERE:               Option[Predicate],
     includeCalibrations: Boolean,
     allowedStates:       Set[ObservationWorkflowState]
-  )(using Services[F], NoTransaction[F]): F[Result[List[Observation.Id]]] = 
+  )(using Services[F], NoTransaction[F]): F[Result[List[Observation.Id]]] =  {
+    def observationIdWhereClause(
+      includeDeleted:      Option[Boolean],
+      WHERE:               Option[Predicate],
+      includeCalibrations: Boolean
+    ): Result[AppliedFragment] = {
+      val whereObservation: Predicate =
+        and(List(
+          Predicates.observation.program.isWritableBy(user),
+          Predicates.observation.existence.includeDeleted(includeDeleted.getOrElse(false)),
+          if (includeCalibrations) True else Predicates.observation.calibrationRole.isNull(true),
+          WHERE.getOrElse(True)
+        ))
+
+      MappedQuery(
+        Filter(whereObservation, Select("id", None, Query.Empty)),
+        Context(QueryType, List("observations"), List("observations"), List(ObservationType))
+      ).flatMap(_.fragment)
+    }
+
     Services.asSuperUser:
-      observationIdSelect(includeDeleted, WHERE, includeCalibrations)
+      observationIdWhereClause(includeDeleted, WHERE, includeCalibrations)
         .flatTraverse: which =>
           observationWorkflowService.filterState(
             which, 
@@ -76,8 +74,10 @@ trait AccessControl[F[_]] extends Predicates[F] {
             itcClient,
             timeEstimateCalculator
           )
+  
+  }
 
-  def selectForUpdate(input: UpdateObservationsInput)(using Services[F], NoTransaction[F]): F[Result[AccessControl.ApprovedUpdate[ObservationPropertiesInput.Edit, Observation.Id]]] =
+  def selectForUpdate(input: UpdateObservationsInput, includeCalibrations: Boolean)(using Services[F], NoTransaction[F]): F[Result[AccessControl.ApprovedUpdate[ObservationPropertiesInput.Edit, Observation.Id]]] =
     Services.asSuperUser:
 
       def allowedStates(SET: ObservationPropertiesInput.Edit): Set[ObservationWorkflowState] =
@@ -96,25 +96,35 @@ trait AccessControl[F[_]] extends Predicates[F] {
         then ObservationWorkflowState.preExecutionSet
         else ObservationWorkflowState.fullSet
 
-      observationIdSelectWithWorkflowState(
+      selectForObservationUpdateImpl(
         input.includeDeleted, 
         input.WHERE, 
-        false, 
+        includeCalibrations, 
         allowedStates(input.SET)
       ).map(_.map(new AccessControl.ApprovedUpdate(input.SET, _) {}))
       
-  def selectForUpdate(input: UpdateAsterismsInput)(using Services[F], NoTransaction[F]): F[Result[AccessControl.ApprovedUpdate[EditAsterismsPatchInput, Observation.Id]]] =
+  def selectForUpdate(
+    input: UpdateAsterismsInput,
+    includeCalibrations: Boolean
+  )(using Services[F], NoTransaction[F]): F[Result[AccessControl.ApprovedUpdate[EditAsterismsPatchInput, Observation.Id]]] =
     Services.asSuperUser:
-      observationIdSelectWithWorkflowState(
+      selectForObservationUpdateImpl(
         input.includeDeleted, 
         input.WHERE, 
-        false, 
+        includeCalibrations, 
         ObservationWorkflowState.preExecutionSet // not allowed once we start executing
       ).map(_.map(new AccessControl.ApprovedUpdate(input.SET, _) {}))
 
-  // TODO
-  def selectForUpdate(input: UpdateObservationsTimesInput): Result[AppliedFragment] = 
-    observationIdSelect(input.includeDeleted, input.WHERE, true)
-
+  def selectForUpdate(
+    input: UpdateObservationsTimesInput,
+    includeCalibrations: Boolean
+  )(using Services[F], NoTransaction[F]): F[Result[AccessControl.ApprovedUpdate[ObservationTimesInput, Observation.Id]]]  =
+    Services.asSuperUser:
+      selectForObservationUpdateImpl(
+        input.includeDeleted, 
+        input.WHERE, 
+        includeCalibrations, 
+        ObservationWorkflowState.allButComplete // allowed unless we're complete
+      ).map(_.map(new AccessControl.ApprovedUpdate(input.SET, _) {}))
 
 }
