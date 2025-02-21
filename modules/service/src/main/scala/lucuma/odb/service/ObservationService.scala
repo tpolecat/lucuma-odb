@@ -67,6 +67,7 @@ import lucuma.odb.graphql.input.ScienceRequirementsInput
 import lucuma.odb.graphql.input.SpectroscopyScienceRequirementsInput
 import lucuma.odb.graphql.input.TargetEnvironmentInput
 import lucuma.odb.graphql.input.TimingWindowInput
+import lucuma.odb.graphql.mapping.AccessControl
 import lucuma.odb.util.Codecs.*
 import lucuma.odb.util.Codecs.group_id
 import lucuma.odb.util.Codecs.int2_nonneg
@@ -100,13 +101,17 @@ sealed trait ObservationService[F[_]] {
   )(using Transaction[F]): F[Map[Option[ObservingModeType], List[Observation.Id]]]
 
   def updateObservations(
+    update: AccessControl.ApprovedUpdate[ObservationPropertiesInput.Edit, Observation.Id]
+  )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]]
+
+  // TODO: fix, used by cals
+  def updateObservations(
     SET:   ObservationPropertiesInput.Edit,
     which: AppliedFragment
   )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]]
 
   def updateObservationsTimes(
-    SET:   ObservationTimesInput,
-    which: AppliedFragment
+    update: AccessControl.ApprovedUpdate[ObservationTimesInput, Observation.Id]
   )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]]
 
   def cloneObservation(
@@ -475,22 +480,32 @@ object ObservationService {
           } yield r
         }
 
-      override def updateObservationsTimes(
-        SET:   ObservationTimesInput,
-        which: AppliedFragment
+      override def updateObservations(
+        update: AccessControl.ApprovedUpdate[ObservationPropertiesInput.Edit, Observation.Id]
       )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]] =
-        Trace[F].span("updateObservationTimes") {
-          val updates: ResultT[F, Map[Program.Id, List[Observation.Id]]] =
-            for {
-              r <- ResultT(Statements.updateObsTime(SET, which).traverse { af =>
-                      session.prepareR(af.fragment.query(program_id *: observation_id)).use { pq =>
-                        pq.stream(af.argument, chunkSize = 1024).compile.toList
-                      }
-                   })
-              g  = r.groupMap(_._1)(_._2)                 // grouped:   Map[Program.Id, List[Observation.Id]]
-            } yield g
-          updates.value
-        }
+        if update.ids.isEmpty then Result(Map.empty).pure[F]
+        else 
+          val oids2 = update.ids
+          updateObservations(update.SET, sql"${observation_id.list(oids2)}"(oids2))
+
+      override def updateObservationsTimes(
+        update: AccessControl.ApprovedUpdate[ObservationTimesInput, Observation.Id]
+      )(using Transaction[F]): F[Result[Map[Program.Id, List[Observation.Id]]]] =
+        Trace[F].span("updateObservationTimes"):
+          NonEmptyList.fromList(update.ids) match
+            case None => Result(Map.empty).pure[F]
+            case Some(nel) =>              
+              val enc = observation_id.nel(nel)
+              val which = sql"$enc".apply(nel)
+              Statements.updateObsTime(update.SET, which).traverse: af =>
+                session
+                  .prepareR(af.fragment.query(program_id *: observation_id))
+                  .use: pq =>
+                    pq.stream(af.argument, chunkSize = 1024)
+                      .compile
+                      .toList
+                  .map: list =>
+                    list.groupMap(_._1)(_._2)
 
       private def cloneObservationImpl(
         observationId: Observation.Id,

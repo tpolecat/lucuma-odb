@@ -35,6 +35,8 @@ import skunk.codec.all.*
 import skunk.implicits.*
 
 import Services.Syntax.*
+import lucuma.odb.graphql.mapping.AccessControl
+import lucuma.odb.graphql.input.EditAsterismsPatchInput
 
 trait AsterismService[F[_]] {
 
@@ -73,10 +75,19 @@ trait AsterismService[F[_]] {
    * Updates the asterisms associated with each observation id, adding and
    * deleting targets as indicated.
    */
+  // TODO: used by calibrations
   def updateAsterism(
     observationIds: NonEmptyList[Observation.Id],
     ADD:            Option[NonEmptyList[Target.Id]],
     DELETE:         Option[NonEmptyList[Target.Id]]
+  )(using Transaction[F]): F[Result[Unit]]
+
+  /**
+   * Updates the asterisms associated with each observation id, adding and
+   * deleting targets as indicated.
+   */
+  def updateAsterism(
+    update: AccessControl.ApprovedUpdate[EditAsterismsPatchInput, Observation.Id]
   )(using Transaction[F]): F[Result[Unit]]
 
   def cloneAsterism(
@@ -175,6 +186,18 @@ object AsterismService {
             })
         }.value
 
+      override def updateAsterism(
+        update: AccessControl.ApprovedUpdate[EditAsterismsPatchInput, Observation.Id]
+      )(using Transaction[F]): F[Result[Unit]] =
+        NonEmptyList.fromList(update.ids) match
+          case None => Result.unit.pure[F]
+          case Some(oids) =>
+            updateAsterism(
+              oids, 
+              update.SET.ADD.flatMap(NonEmptyList.fromList),
+              update.SET.DELETE.flatMap(NonEmptyList.fromList)
+            )
+        
       override def cloneAsterism(
         originalId: Observation.Id,
         newId: Observation.Id,
